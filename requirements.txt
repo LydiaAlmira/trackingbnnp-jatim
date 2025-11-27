@@ -4,5 +4,6 @@ numpy
 matplotlib
 seaborn
 statsmodels
+cmdstanpy
 prophet
 openpyxl
