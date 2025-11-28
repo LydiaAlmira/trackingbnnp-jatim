@@ -340,126 +340,83 @@ st.subheader(f'Forecast ({periods} hari)')
 model_choice = st.selectbox('Pilih metode', ['Prophet (jika tersedia)', 'ARIMA'])
 use_prophet_final = model_choice.startswith('Prophet') and PROPHET_AVAILABLE and use_prophet
 
-try:
-    # -----------------------------
-    # Forecast jumlah kasus
-    # -----------------------------
-    if use_prophet_final:
-        try:
-            total_fc = forecast_prophet(daily['jumlah_kasus'], periods)
-            method_used = 'Prophet'
-        except Exception:
+    try:
+        # -----------------------------
+        # FORECAST
+        # -----------------------------
+        st.subheader(f'Forecast ({periods} hari)')
+        model_choice = st.selectbox('Pilih metode', ['Prophet (jika tersedia)', 'ARIMA'])
+        use_prophet_final = model_choice.startswith('Prophet') and PROPHET_AVAILABLE and use_prophet
+
+        # jumlah kasus
+        if use_prophet_final:
+            try:
+                total_fc = forecast_prophet(daily['jumlah_kasus'], periods)
+                method_used = 'Prophet'
+            except Exception:
+                total_fc = forecast_arima(daily['jumlah_kasus'], periods)
+                method_used = 'ARIMA'
+        else:
             total_fc = forecast_arima(daily['jumlah_kasus'], periods)
             method_used = 'ARIMA'
-    else:
-        total_fc = forecast_arima(daily['jumlah_kasus'], periods)
-        method_used = 'ARIMA'
 
-    # ---------------------------------
-    # Forecast umur
-    # ---------------------------------
-    age_fc = None
-    if not daily['rata2_umur'].isna().all():
-        try:
-            age_fc = forecast_prophet(daily['rata2_umur'], periods) if use_prophet_final else forecast_arima(daily['rata2_umur'], periods)
-        except Exception:
-            age_fc = forecast_arima(daily['rata2_umur'], periods)
+        # umur
+        age_fc = None
+        if not daily['rata2_umur'].isna().all():
+            try:
+                age_fc = forecast_prophet(daily['rata2_umur'], periods) if use_prophet_final else forecast_arima(daily['rata2_umur'], periods)
+            except Exception:
+                age_fc = forecast_arima(daily['rata2_umur'], periods)
 
-    # ---------------------------------
-    # Forecast proporsi laki-laki
-    # ---------------------------------
-    male_fc = None
-    if not daily['prop_laki'].isna().all():
-        try:
-            male_fc = forecast_prophet(daily['prop_laki'], periods) if use_prophet_final else forecast_arima(daily['prop_laki'], periods)
-        except Exception:
-            male_fc = forecast_arima(daily['prop_laki'], periods)
+        # laki
+        male_fc = None
+        if not daily['prop_laki'].isna().all():
+            try:
+                male_fc = forecast_prophet(daily['prop_laki'], periods) if use_prophet_final else forecast_arima(daily['prop_laki'], periods)
+            except Exception:
+                male_fc = forecast_arima(daily['prop_laki'], periods)
 
-    st.write('Metode:', method_used)
+        st.write('Metode:', method_used)
 
-    # ---------------------------------
-    # PLOT jumlah kasus
-    # ---------------------------------
-    fig6, ax6 = plt.subplots(figsize=(10,4))
-    ax6.plot(daily.index, daily['jumlah_kasus'], label='historical')
-    ax6.plot(total_fc.index, total_fc.values, '--', label='forecast')
-    ax6.set_title('Jumlah Kasus: Historical + Forecast')
-    ax6.set_xlabel('Date')
-    ax6.set_ylabel('Jumlah kasus')
-    ax6.legend()
-    st.pyplot(fig6)
+        # plot forecast
+        fig6, ax6 = plt.subplots(figsize=(10,4))
+        ax6.plot(daily.index, daily['jumlah_kasus'], label='historical')
+        ax6.plot(total_fc.index, total_fc.values, '--', label='forecast')
+        ax6.set_title('Jumlah Kasus: Historical + Forecast')
+        ax6.set_xlabel('Date')
+        ax6.set_ylabel('Jumlah kasus')
+        ax6.legend()
+        st.pyplot(fig6)
 
-    # ---------------------------------
-    # PLOT umur
-    # ---------------------------------
-    if age_fc is not None:
-        fig7, ax7 = plt.subplots(figsize=(10,4))
-        ax7.plot(daily.index, daily['rata2_umur'], label='historical')
-        ax7.plot(age_fc.index, age_fc.values, '--', label='forecast')
-        ax7.set_title('Rata-rata Umur: Historical + Forecast')
-        ax7.legend()
-        st.pyplot(fig7)
+        if age_fc is not None:
+            fig7, ax7 = plt.subplots(figsize=(10,4))
+            ax7.plot(daily.index, daily['rata2_umur'], label='historical')
+            ax7.plot(age_fc.index, age_fc.values, '--', label='forecast')
+            ax7.set_title('Rata-rata Umur: Historical + Forecast')
+            ax7.legend()
+            st.pyplot(fig7)
 
-    # ---------------------------------
-    # PLOT proporsi laki-laki
-    # ---------------------------------
-    if male_fc is not None:
-        fig8, ax8 = plt.subplots(figsize=(10,4))
-        ax8.plot(daily.index, daily['prop_laki'], label='historical')
-        ax8.plot(male_fc.index, male_fc.values, '--', label='forecast')
-        ax8.set_title('Proporsi Laki-laki: Historical + Forecast')
-        ax8.legend()
-        st.pyplot(fig8)
+        if male_fc is not None:
+            fig8, ax8 = plt.subplots(figsize=(10,4))
+            ax8.plot(daily.index, daily['prop_laki'], label='historical')
+            ax8.plot(male_fc.index, male_fc.values, '--', label='forecast')
+            ax8.set_title('Proporsi Laki: Historical + Forecast')
+            ax8.legend()
+            st.pyplot(fig8)
 
-    # ---------------------------------
-    # RINGKASAN PREDIKSI
-    # ---------------------------------
-    st.subheader('Ringkasan Prediksi')
+        # -----------------------------
+        # RINGKASAN PREDIKSI
+        # -----------------------------
+        st.subheader('Ringkasan Prediksi')
 
-    summary = {
-        'total_mean_next': float(total_fc.mean()),
-        'total_trend': 'naik' if total_fc.iloc[-1] > total_fc.iloc[0] else 'turun',
-        'avg_age_next_mean': float(age_fc.mean()) if age_fc is not None else None,
-        'male_prop_next_mean': float(male_fc.mean()) if male_fc is not None else None
-    }
+        summary = {
+            'total_mean_next': float(total_fc.mean()),
+            'total_trend': 'naik' if total_fc.iloc[-1] > total_fc.iloc[0] else 'turun',
+            'avg_age_next_mean': float(age_fc.mean()) if age_fc is not None else None,
+            'male_prop_next_mean': float(male_fc.mean()) if male_fc is not None else None
+        }
 
-    st.json(summary)
+        st.json(summary)
 
-except Exception as e:
-    st.error(f"Terjadi kesalahan dalam memproses data: {e}")
-
-# -----------------------------
-# WILAYAH RISIKO TERTINGGI
-# -----------------------------
-st.subheader('Wilayah Risiko Tertinggi')
-
-if col_region:
-    try:
-        regions = df[col_region].dropna().unique()
-        region_means = {}
-
-        for r in regions:
-            per_day = df[df[col_region] == r].groupby(col_date).size()
-            per_day = per_day.reindex(daily.index).fillna(0)
-            region_means[r] = per_day.mean()
-
-        region_df = pd.DataFrame(
-            region_means.items(),
-            columns=['Wilayah', 'Rata-rata Kasus Harian']
-        ).sort_values('Rata-rata Kasus Harian', ascending=False)
-
-        st.dataframe(region_df.head(10))
-
-        if not region_df.empty:
-            highest_region = region_df.iloc[0]['Wilayah']
-            highest_mean = float(region_df.iloc[0]['Rata-rata Kasus Harian'])
-            st.success(
-                f"Wilayah risiko tertinggi: **{highest_region}** "
-                f"(rata-rata {highest_mean:.2f} kasus/hari)"
-            )
     except Exception as e:
-        st.warning(f"Gagal memproses wilayah risiko tertinggi: {e}")
-
-else:
-    st.info("Kolom wilayah tidak tersedia pada dataset.")
-
+        st.error(f"Terjadi kesalahan dalam memproses data: {e}")
