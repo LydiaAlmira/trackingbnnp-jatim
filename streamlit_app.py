@@ -295,7 +295,7 @@ if uploaded is not None:
         st.json(summary)
 
         # -----------------------------
-        # WILAYAH RISIKO TERTINGGI (FIX TANPA TRY)
+        # WILAYAH RISIKO TERTINGGI
         # -----------------------------
         st.subheader('Wilayah Risiko Tertinggi')
 
@@ -317,3 +317,6 @@ if uploaded is not None:
 
         else:
             st.info("Kolom wilayah tidak tersedia pada dataset.")
+
+    except Exception as e:
+        st.error(f"Terjadi kesalahan dalam memproses data: {e}")
