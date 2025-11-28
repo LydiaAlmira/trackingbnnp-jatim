@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
-import tempfile
 from datetime import timedelta
 from statsmodels.tsa.arima.model import ARIMA
 
@@ -79,18 +78,17 @@ def forecast_arima(series, periods=30):
         return pd.Series([last]*periods, index=idx)
 
 # -----------------------------
-# Main: process uploaded file
+# Main processing
 # -----------------------------
 if uploaded is not None:
     try:
         with st.spinner('Membaca file...'):
-            in_memory = uploaded.read()
-            df = pd.read_excel(io.BytesIO(in_memory))
+            df = pd.read_excel(io.BytesIO(uploaded.read()))
 
         st.subheader('Preview data (5 baris pertama)')
         st.write(df.head())
 
-        # Deteksi kolom penting
+        # Deteksi kolom
         col_date = find_column(df, ['tanggal','tgl','date'])
         col_age = find_column(df, ['umur','usia','age'])
         col_gender = find_column(df, ['jenis kelamin','jk','gender','sex'])
@@ -98,96 +96,76 @@ if uploaded is not None:
         col_drug = find_column(df, ['narkoba','jenis barang','jenis narkoba','barang','nama barang','jenis'])
 
         st.markdown('**Kolom terdeteksi:**')
-        cols_detected = {
+        st.json({
             'Tanggal': col_date,
             'Umur': col_age,
             'Jenis Kelamin': col_gender,
-            'Wilayah / Asal': col_region,
-            'Jenis Narkoba': col_drug,
-        }
-        st.json(cols_detected)
+            'Wilayah/Asal': col_region,
+            'Jenis Narkoba': col_drug
+        })
 
-        # Jika kolom tanggal tidak terdeteksi -> minta user pilih
         if col_date is None:
-            st.error('Kolom tanggal tidak ditemukan otomatis. Silakan pilih kolom tanggal yang benar dari daftar:')
-            chosen = st.selectbox('Pilih kolom tanggal', options=list(df.columns))
-            col_date = chosen
+            st.error('Kolom tanggal tidak ditemukan. Silakan pilih:')
+            col_date = st.selectbox('Kolom tanggal', df.columns)
 
         # === Perbaikan konversi tanggal ===
-        # Simpan nilai mentah dulu
         raw_dates = df[col_date].copy()
 
-        # 1) coba konversi biasa
         df[col_date] = pd.to_datetime(raw_dates, errors='coerce')
 
-        # 2) Jika terlalu banyak NaT atau tahun tidak masuk akal (misal min year < 1900 atau max year > 2030)
-        need_excel_serial = False
         nat_ratio = df[col_date].isna().mean()
-        try:
-            min_year = int(df[col_date].dropna().dt.year.min()) if df[col_date].notna().any() else None
-            max_year = int(df[col_date].dropna().dt.year.max()) if df[col_date].notna().any() else None
-        except Exception:
-            min_year = None
-            max_year = None
+        need_excel_serial = False
 
-        if (nat_ratio > 0.2) or (min_year is not None and (min_year < 1900 or max_year > 2100)):
+        if nat_ratio > 0.2:
             need_excel_serial = True
 
-        # 3) Jika perlu, coba konversi sebagai serial Excel (unit='d', origin Excel)
         if need_excel_serial:
-            try:
-                # ubah ke numeric dulu (beberapa cell bisa bertipe string)
-                ser = pd.to_numeric(raw_dates, errors='coerce')
-                df[col_date] = pd.to_datetime(ser, unit='d', origin='1899-12-30', errors='coerce')
-            except Exception:
-                pass
+            ser = pd.to_numeric(raw_dates, errors='coerce')
+            df[col_date] = pd.to_datetime(ser, unit='d', origin='1899-12-30', errors='coerce')
 
-        # 4) Jika masih banyak NaT, coba lagi per baris: bila isi adalah angka tanpa titik, konversi sebagai serial
         if df[col_date].isna().mean() > 0.2:
-            def try_convert_cell(x):
-                # jika sudah datetime, kembalikan
+            def try_convert(x):
                 try:
-                    if pd.notna(pd.to_datetime(x, errors='coerce')):
-                        return pd.to_datetime(x, errors='coerce')
-                except Exception:
+                    return pd.to_datetime(x, errors='coerce')
+                except:
                     pass
-                # coba numeric -> excel serial
                 try:
-                    n = float(x)
-                    return pd.to_datetime(n, unit='d', origin='1899-12-30', errors='coerce')
-                except Exception:
+                    return pd.to_datetime(float(x), unit='d', origin='1899-12-30')
+                except:
                     return pd.NaT
-            df[col_date] = raw_dates.apply(try_convert_cell)
+            df[col_date] = raw_dates.apply(try_convert)
 
-        # drop baris tanpa tanggal valid
         df = df.dropna(subset=[col_date]).copy()
-        df[col_date] = pd.to_datetime(df[col_date], errors='coerce').dt.floor('D')
+        df[col_date] = pd.to_datetime(df[col_date]).dt.floor('D')
 
-        # Jika ada data tahun 2025, filter ke 2025 Januari–November sesuai permintaan
+        # Filter tahun 2025 s.d November
         if (df[col_date].dt.year == 2025).any():
             df = df[df[col_date].dt.year == 2025]
-            # jika memang mau hanya sampai November:
             df = df[df[col_date].dt.month <= 11]
 
-        # Normalisasi string kolom
-        for c in [col_gender, col_region, col_drug]:
-            if c in df.columns:
-                df[c] = df[c].astype(str).str.strip()
+        # Normalisasi
+        for col in [col_gender, col_region, col_drug]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
 
         # Aggregasi harian
         daily = df.groupby(col_date).agg(jumlah_kasus=(col_date,'size'))
-        if col_age in df.columns:
+
+        if col_age:
             daily['rata2_umur'] = df.groupby(col_date)[col_age].mean()
         else:
             daily['rata2_umur'] = np.nan
 
-        if col_gender in df.columns:
-            df['_is_laki'] = df[col_gender].astype(str).str.lower().str.contains('l') | df[col_gender].astype(str).str.lower().str.contains('male') | df[col_gender].astype(str).str.lower().str.contains('laki')
-            df['_is_perempuan'] = df[col_gender].astype(str).str.lower().str.contains('p') | df[col_gender].astype(str).str.lower().str.contains('female') | df[col_gender].astype(str).str.lower().str.contains('perempuan')
-            g = df.groupby(col_date).agg(total=(col_date,'size'), laki=('_is_laki','sum'), perempuan=('_is_perempuan','sum'))
-            g['prop_laki'] = g['laki']/g['total']
-            g['prop_perempuan'] = g['perempuan']/g['total']
-            daily = daily.merge(g[['prop_laki','prop_perempuan']], left_index=True, right_index=True, how='left')
+        if col_gender:
+            df['_laki'] = df[col_gender].str.lower().str.contains('l') | df[col_gender].str.lower().str.contains('male')
+            df['_perempuan'] = df[col_gender].str.lower().str.contains('p') | df[col_gender].str.lower().str.contains('female')
+            g = df.groupby(col_date).agg(
+                total=(col_date,'size'),
+                laki=('_laki','sum'),
+                perempuan=('_perempuan','sum')
+            )
+            daily['prop_laki'] = g['laki']/g['total']
+            daily['prop_perempuan'] = g['perempuan']/g['total']
         else:
             daily['prop_laki'] = np.nan
             daily['prop_perempuan'] = np.nan
@@ -197,119 +175,97 @@ if uploaded is not None:
         st.subheader('Ringkasan Harian (sample)')
         st.dataframe(daily.head(20))
 
-        # ----- Grafik lengkap -----
+        # -----------------------------
+        # GRAFIK
+        # -----------------------------
         st.subheader('Grafik Analisis')
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown('**Top wilayah (bar)**')
             if col_region:
+                st.markdown('**Top wilayah**')
                 top_reg = df[col_region].value_counts().nlargest(20)
                 fig, ax = plt.subplots(figsize=(6,5))
-                sns.barplot(x=top_reg.values, y=top_reg.index, ax=ax)
-                ax.set_xlabel('Jumlah kasus')
-                ax.set_ylabel('Wilayah')
+                ax.barh(top_reg.index, top_reg.values)
                 st.pyplot(fig)
-            else:
-                st.info('Kolom wilayah tidak ditemukan.')
 
-            st.markdown('**Proporsi Jenis Kelamin (pie)**')
             if col_gender:
-                jk_counts = df[col_gender].value_counts()
+                st.markdown('**Proporsi Jenis Kelamin**')
+                jk = df[col_gender].value_counts()
                 fig2, ax2 = plt.subplots(figsize=(5,5))
-                ax2.pie(jk_counts.values, labels=jk_counts.index, autopct='%1.1f%%')
+                ax2.pie(jk.values, labels=jk.index, autopct='%1.1f%%')
                 ax2.axis('equal')
                 st.pyplot(fig2)
-            else:
-                st.info('Kolom jenis kelamin tidak ditemukan.')
 
         with col2:
-            st.markdown('**Top jenis narkoba (bar)**')
             if col_drug:
+                st.markdown('**Top Jenis Narkoba**')
                 top_drug = df[col_drug].value_counts().nlargest(20)
                 fig3, ax3 = plt.subplots(figsize=(6,5))
-                sns.barplot(x=top_drug.values, y=top_drug.index, ax=ax3)
-                ax3.set_xlabel('Jumlah kasus')
-                ax3.set_ylabel('Jenis narkoba')
+                ax3.barh(top_drug.index, top_drug.values)
                 st.pyplot(fig3)
-            else:
-                st.info('Kolom jenis narkoba tidak ditemukan.')
 
-            st.markdown('**Tren bulanan (line)**')
+            st.markdown('**Tren Bulanan**')
             monthly = df.groupby(df[col_date].dt.to_period('M')).size()
             monthly.index = monthly.index.to_timestamp()
             fig4, ax4 = plt.subplots(figsize=(6,3))
             ax4.plot(monthly.index, monthly.values, marker='o')
-            ax4.set_title('Tren kasus per bulan')
-            ax4.set_xlabel('Bulan')
-            ax4.set_ylabel('Jumlah kasus')
             st.pyplot(fig4)
 
-        # Heatmap wilayah x narkoba
-        st.markdown('**Heatmap: Wilayah vs Jenis Narkoba**')
+        st.markdown('**Heatmap: Wilayah x Jenis Narkoba**')
         if col_region and col_drug:
             heat = df.groupby([col_region, col_drug]).size().unstack(fill_value=0)
             top_w = df[col_region].value_counts().nlargest(20).index
             top_d = df[col_drug].value_counts().nlargest(10).index
-            heat_small = heat.loc[heat.index.isin(top_w), heat.columns.isin(top_d)]
+            heat = heat.loc[top_w, top_d]
             fig5, ax5 = plt.subplots(figsize=(12,6))
-            sns.heatmap(heat_small, annot=True, fmt='d', cmap='YlOrRd', ax=ax5)
-            ax5.set_xlabel('Jenis Narkoba')
-            ax5.set_ylabel('Wilayah')
+            sns.heatmap(heat, annot=True, fmt='d', cmap='YlOrRd', ax=ax5)
             st.pyplot(fig5)
-        else:
-            st.info('Butuh kolom wilayah dan jenis narkoba untuk heatmap.')
 
-        # ----- Forecast -----
-        st.subheader('Forecast (30 hari default)')
-        model_choice = st.selectbox('Pilih metode forecasting', options=['Prophet (jika tersedia)','ARIMA (fallback)'])
-        use_prophet_final = (model_choice.startswith('Prophet') and PROPHET_AVAILABLE and use_prophet)
+        # -----------------------------
+        # FORECAST
+        # -----------------------------
+        st.subheader(f'Forecast ({periods} hari)')
+        model_choice = st.selectbox('Pilih metode', ['Prophet (jika tersedia)', 'ARIMA'])
 
-        # forecast jumlah kasus
+        use_prophet_final = model_choice.startswith('Prophet') and PROPHET_AVAILABLE and use_prophet
+
         with st.spinner('Menjalankan forecasting...'):
+            # jumlah kasus
             if use_prophet_final:
                 try:
-                    total_fc = forecast_prophet(daily['jumlah_kasus'], periods=periods)
+                    total_fc = forecast_prophet(daily['jumlah_kasus'], periods)
                     method_used = 'Prophet'
                 except Exception as e:
-                    st.warning('Prophet gagal, fallback ke ARIMA. Error: {}'.format(e))
-                    total_fc = forecast_arima(daily['jumlah_kasus'], periods=periods)
+                    st.warning(f'Prophet gagal, fallback ARIMA. Error: {e}')
+                    total_fc = forecast_arima(daily['jumlah_kasus'], periods)
                     method_used = 'ARIMA'
             else:
-                total_fc = forecast_arima(daily['jumlah_kasus'], periods=periods)
+                total_fc = forecast_arima(daily['jumlah_kasus'], periods)
                 method_used = 'ARIMA'
 
             # umur
-            if 'rata2_umur' in daily.columns and not daily['rata2_umur'].isnull().all():
-                if use_prophet_final:
-                    try:
-                        age_fc = forecast_prophet(daily['rata2_umur'], periods=periods)
-                    except:
-                        age_fc = forecast_arima(daily['rata2_umur'], periods=periods)
-                else:
-                    age_fc = forecast_arima(daily['rata2_umur'], periods=periods)
-            else:
-                age_fc = None
+            age_fc = None
+            if not daily['rata2_umur'].isna().all():
+                try:
+                    age_fc = forecast_prophet(daily['rata2_umur'], periods) if use_prophet_final else forecast_arima(daily['rata2_umur'], periods)
+                except:
+                    age_fc = forecast_arima(daily['rata2_umur'], periods)
 
-            # prop laki
-            if 'prop_laki' in daily.columns and not daily['prop_laki'].isnull().all():
-                if use_prophet_final:
-                    try:
-                        male_fc = forecast_prophet(daily['prop_laki'], periods=periods)
-                    except:
-                        male_fc = forecast_arima(daily['prop_laki'], periods=periods)
-                else:
-                    male_fc = forecast_arima(daily['prop_laki'], periods=periods)
-            else:
-                male_fc = None
+            # laki
+            male_fc = None
+            if not daily['prop_laki'].isna().all():
+                try:
+                    male_fc = forecast_prophet(daily['prop_laki'], periods) if use_prophet_final else forecast_arima(daily['prop_laki'], periods)
+                except:
+                    male_fc = forecast_arima(daily['prop_laki'], periods)
 
-        st.write('Metode dipakai:', method_used)
+        st.write('Metode:', method_used)
 
-        # tampilkan grafik hasil forecast
+        # plot forecast
         fig6, ax6 = plt.subplots(figsize=(10,4))
         ax6.plot(daily.index, daily['jumlah_kasus'], label='historical')
         ax6.plot(total_fc.index, total_fc.values, '--', label='forecast')
-        ax6.set_title('Jumlah Kasus: Historical + Forecast ({})'.format(periods))
         ax6.legend()
         st.pyplot(fig6)
 
@@ -317,7 +273,6 @@ if uploaded is not None:
             fig7, ax7 = plt.subplots(figsize=(10,4))
             ax7.plot(daily.index, daily['rata2_umur'], label='historical')
             ax7.plot(age_fc.index, age_fc.values, '--', label='forecast')
-            ax7.set_title('Rata2 Umur: Historical + Forecast')
             ax7.legend()
             st.pyplot(fig7)
 
@@ -325,74 +280,40 @@ if uploaded is not None:
             fig8, ax8 = plt.subplots(figsize=(10,4))
             ax8.plot(daily.index, daily['prop_laki'], label='historical')
             ax8.plot(male_fc.index, male_fc.values, '--', label='forecast')
-            ax8.set_title('Proporsi Laki: Historical + Forecast')
             ax8.legend()
             st.pyplot(fig8)
 
-        # ----- Ringkasan prediksi -----
+        # -----------------------------
+        # RINGKASAN PREDIKSI
+        # -----------------------------
         st.subheader('Ringkasan Prediksi')
-        summary = {}
-        summary['total_mean_next'] = float(total_fc.mean())
-        summary['total_trend'] = 'naik' if total_fc.iloc[-1] > total_fc.iloc[0] else ('turun' if total_fc.iloc[-1] < total_fc.iloc[0] else 'stabil')
-        if age_fc is not None:
-            summary['avg_age_next_mean'] = float(age_fc.mean())
-            summary['avg_age_trend'] = 'naik' if age_fc.iloc[-1] > age_fc.iloc[0] else ('turun' if age_fc.iloc[-1] < age_fc.iloc[0] else 'stabil')
-        else:
-            summary['avg_age_next_mean'] = None
-            summary['avg_age_trend'] = None
-        if male_fc is not None:
-            summary['male_prop_next_mean'] = float(male_fc.mean())
-            summary['male_prop_trend'] = 'naik' if male_fc.iloc[-1] > male_fc.iloc[0] else ('turun' if male_fc.iloc[-1] < male_fc.iloc[0] else 'stabil')
-        else:
-            summary['male_prop_next_mean'] = None
-            summary['male_prop_trend'] = None
 
-        # highest risk region
-        if col_region:
-            region_means = {}
-            regions = df[col_region].dropna().unique()
-            for r in regions:
-                s = df[df[col_region]==r].groupby(col_date).size()
-                s.index = pd.to_datetime(s.index)
-                s = s.asfreq('D').fillna(0)
-                p = forecast_arima(s, periods=periods)
-                region_means[r] = float(p.mean())
-            highest = max(region_means.items(), key=lambda x: x[1])
-            summary['highest_risk_region'] = highest[0]
-            summary['highest_risk_region_mean_daily'] = highest[1]
-        else:
-            summary['highest_risk_region'] = None
-            summary['highest_risk_region_mean_daily'] = None
-
-        # dominant drug naive prediction
-        if col_drug:
-            drug_counts = df[col_drug].value_counts().to_dict()
-            total_hist = df.shape[0]
-            total_next30_mean = summary['total_mean_next']
-            drug_pred = {d: (cnt/total_hist)*(total_next30_mean*periods) for d,cnt in drug_counts.items()}
-            dom = max(drug_pred.items(), key=lambda x: x[1])
-            summary['dominant_drug_next'] = dom[0]
-            summary['dominant_drug_next_total_pred'] = dom[1]
-        else:
-            summary['dominant_drug_next'] = None
-            summary['dominant_drug_next_total_pred'] = None
+        summary = {
+            'total_mean_next': float(total_fc.mean()),
+            'total_trend': 'naik' if total_fc.iloc[-1] > total_fc.iloc[0] else 'turun',
+            'avg_age_next_mean': float(age_fc.mean()) if age_fc is not None else None,
+            'male_prop_next_mean': float(male_fc.mean()) if male_fc is not None else None
+        }
 
         st.json(summary)
 
-        # ----- Export hasil prediksi -----
-        st.subheader('Simpan Hasil Prediksi')
-        export_df = pd.DataFrame({'date': total_fc.index, 'total_cases_pred': total_fc.values})
-        if age_fc is not None:
-            export_df['avg_age_pred'] = age_fc.values
-        if male_fc is not None:
-            export_df['male_prop_pred'] = male_fc.values
-        if st.button('Simpan CSV hasil prediksi'):
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.csv')
-            export_df.to_csv(tmp.name, index=False)
-            with open(tmp.name, 'rb') as f:
-                st.download_button('Download CSV', data=f, file_name='forecast_results.csv', mime='text/csv')
+        # -----------------------------
+        # Highest Risk Region
+        # -----------------------------
+        st.subheader('Wilayah Risiko Tertinggi')
 
-    except Exception as e:
-        st.error(f'Terjadi kesalahan saat memproses file: {e}')
-else:
-    st.info('Unggah file Excel di sidebar untuk memulai analisis.')
+        if col_region:
+            region_means = {}
+            regions = df[col_region].dropna().unique()
+
+            for r in regions:
+                s = df[df[col_region] == r].groupby(col_date).size()
+                s = s.reindex(daily.index).fillna(0)
+                region_means[r] = s.mean()
+
+            region_df = pd.DataFrame(region_means.items(), columns=['Wilayah','Rata-rata Kasus Harian'])
+            region_df = region_df.sort_values('Rata-rata Kasus Harian', ascending=False)
+
+            st.dataframe(region_df.head(10))
+        else:
+            st.info('Kolom wilayah tidak tersedia.')
