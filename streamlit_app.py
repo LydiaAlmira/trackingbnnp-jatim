@@ -227,38 +227,35 @@ if uploaded is not None:
         # -----------------------------
         st.subheader(f'Forecast ({periods} hari)')
         model_choice = st.selectbox('Pilih metode', ['Prophet (jika tersedia)', 'ARIMA'])
-
         use_prophet_final = model_choice.startswith('Prophet') and PROPHET_AVAILABLE and use_prophet
 
-        with st.spinner('Menjalankan forecasting...'):
-            # jumlah kasus
-            if use_prophet_final:
-                try:
-                    total_fc = forecast_prophet(daily['jumlah_kasus'], periods)
-                    method_used = 'Prophet'
-                except Exception as e:
-                    st.warning(f'Prophet gagal, fallback ARIMA. Error: {e}')
-                    total_fc = forecast_arima(daily['jumlah_kasus'], periods)
-                    method_used = 'ARIMA'
-            else:
+        # jumlah kasus
+        if use_prophet_final:
+            try:
+                total_fc = forecast_prophet(daily['jumlah_kasus'], periods)
+                method_used = 'Prophet'
+            except:
                 total_fc = forecast_arima(daily['jumlah_kasus'], periods)
                 method_used = 'ARIMA'
+        else:
+            total_fc = forecast_arima(daily['jumlah_kasus'], periods)
+            method_used = 'ARIMA'
 
-            # umur
-            age_fc = None
-            if not daily['rata2_umur'].isna().all():
-                try:
-                    age_fc = forecast_prophet(daily['rata2_umur'], periods) if use_prophet_final else forecast_arima(daily['rata2_umur'], periods)
-                except:
-                    age_fc = forecast_arima(daily['rata2_umur'], periods)
+        # umur
+        age_fc = None
+        if not daily['rata2_umur'].isna().all():
+            try:
+                age_fc = forecast_prophet(daily['rata2_umur'], periods) if use_prophet_final else forecast_arima(daily['rata2_umur'], periods)
+            except:
+                age_fc = forecast_arima(daily['rata2_umur'], periods)
 
-            # laki
-            male_fc = None
-            if not daily['prop_laki'].isna().all():
-                try:
-                    male_fc = forecast_prophet(daily['prop_laki'], periods) if use_prophet_final else forecast_arima(daily['prop_laki'], periods)
-                except:
-                    male_fc = forecast_arima(daily['prop_laki'], periods)
+        # laki
+        male_fc = None
+        if not daily['prop_laki'].isna().all():
+            try:
+                male_fc = forecast_prophet(daily['prop_laki'], periods) if use_prophet_final else forecast_arima(daily['prop_laki'], periods)
+            except:
+                male_fc = forecast_arima(daily['prop_laki'], periods)
 
         st.write('Metode:', method_used)
 
@@ -297,40 +294,26 @@ if uploaded is not None:
 
         st.json(summary)
 
-# -----------------------------
-# Highest Risk Region
-# -----------------------------
-st.subheader('Wilayah Risiko Tertinggi')
+        # -----------------------------
+        # WILAYAH RISIKO TERTINGGI (FIX TANPA TRY)
+        # -----------------------------
+        st.subheader('Wilayah Risiko Tertinggi')
 
-# Pastikan kolom wilayah terdeteksi
-if col_region:
+        if col_region:
+            regions = df[col_region].dropna().unique()
+            region_means = {}
 
-    # Ambil semua nama wilayah unik
-    regions = df[col_region].dropna().unique()
+            for r in regions:
+                per_day = df[df[col_region] == r].groupby(col_date).size()
+                per_day = per_day.reindex(daily.index).fillna(0)
+                region_means[r] = per_day.mean()
 
-    region_means = {}
+            region_df = pd.DataFrame(
+                region_means.items(),
+                columns=['Wilayah', 'Rata-rata Kasus Harian']
+            ).sort_values('Rata-rata Kasus Harian', ascending=False)
 
-    # Hitung rata-rata kasus harian setiap wilayah
-    for r in regions:
-        # jumlah kasus per hari untuk wilayah tsb
-        per_day = df[df[col_region] == r].groupby(col_date).size()
+            st.dataframe(region_df.head(10))
 
-        # reindex agar sejajar dengan index harian lengkap
-        per_day = per_day.reindex(daily.index).fillna(0)
-
-        # rata-rata harian
-        region_means[r] = per_day.mean()
-
-    # Buat dataframe hasil
-    region_df = pd.DataFrame(
-        region_means.items(),
-        columns=['Wilayah', 'Rata-rata Kasus Harian']
-    )
-
-    region_df = region_df.sort_values('Rata-rata Kasus Harian', ascending=False)
-
-    st.dataframe(region_df.head(10))
-
-else:
-    st.info("Kolom wilayah tidak tersedia pada dataset yang diunggah.")
-
+        else:
+            st.info("Kolom wilayah tidak tersedia pada dataset.")
