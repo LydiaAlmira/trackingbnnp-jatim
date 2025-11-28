@@ -22,7 +22,7 @@ st.set_page_config(layout='wide', page_title='Dashboard Prediksi Kasus Narkoba')
 st.title('Dashboard Prediksi Kasus Narkoba — 30 Hari ke Depan')
 st.markdown(
     'Aplikasi ini membaca file Excel **REG TAT** dan menghasilkan analisis: grafik (bar, pie, heatmap),\n'
-    'serta prediksi 30 hari untuk jumlah kasus, rata‑rata umur, dan proporsi jenis kelamin.\n\n'
+    'serta prediksi 30 hari untuk jumlah kasus, rata-rata umur, dan proporsi jenis kelamin.\n\n'
     '**Jika Prophet tidak terpasang, aplikasi akan menggunakan ARIMA sebagai fallback.**'
 )
 
@@ -113,10 +113,61 @@ if uploaded is not None:
             chosen = st.selectbox('Pilih kolom tanggal', options=list(df.columns))
             col_date = chosen
 
-        # Convert dan bersihkan
-        df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
+        # === Perbaikan konversi tanggal ===
+        # Simpan nilai mentah dulu
+        raw_dates = df[col_date].copy()
+
+        # 1) coba konversi biasa
+        df[col_date] = pd.to_datetime(raw_dates, errors='coerce')
+
+        # 2) Jika terlalu banyak NaT atau tahun tidak masuk akal (misal min year < 1900 atau max year > 2030)
+        need_excel_serial = False
+        nat_ratio = df[col_date].isna().mean()
+        try:
+            min_year = int(df[col_date].dropna().dt.year.min()) if df[col_date].notna().any() else None
+            max_year = int(df[col_date].dropna().dt.year.max()) if df[col_date].notna().any() else None
+        except Exception:
+            min_year = None
+            max_year = None
+
+        if (nat_ratio > 0.2) or (min_year is not None and (min_year < 1900 or max_year > 2100)):
+            need_excel_serial = True
+
+        # 3) Jika perlu, coba konversi sebagai serial Excel (unit='d', origin Excel)
+        if need_excel_serial:
+            try:
+                # ubah ke numeric dulu (beberapa cell bisa bertipe string)
+                ser = pd.to_numeric(raw_dates, errors='coerce')
+                df[col_date] = pd.to_datetime(ser, unit='d', origin='1899-12-30', errors='coerce')
+            except Exception:
+                pass
+
+        # 4) Jika masih banyak NaT, coba lagi per baris: bila isi adalah angka tanpa titik, konversi sebagai serial
+        if df[col_date].isna().mean() > 0.2:
+            def try_convert_cell(x):
+                # jika sudah datetime, kembalikan
+                try:
+                    if pd.notna(pd.to_datetime(x, errors='coerce')):
+                        return pd.to_datetime(x, errors='coerce')
+                except Exception:
+                    pass
+                # coba numeric -> excel serial
+                try:
+                    n = float(x)
+                    return pd.to_datetime(n, unit='d', origin='1899-12-30', errors='coerce')
+                except Exception:
+                    return pd.NaT
+            df[col_date] = raw_dates.apply(try_convert_cell)
+
+        # drop baris tanpa tanggal valid
         df = df.dropna(subset=[col_date]).copy()
-        df[col_date] = df[col_date].dt.floor('D')
+        df[col_date] = pd.to_datetime(df[col_date], errors='coerce').dt.floor('D')
+
+        # Jika ada data tahun 2025, filter ke 2025 Januari–November sesuai permintaan
+        if (df[col_date].dt.year == 2025).any():
+            df = df[df[col_date].dt.year == 2025]
+            # jika memang mau hanya sampai November:
+            df = df[df[col_date].dt.month <= 11]
 
         # Normalisasi string kolom
         for c in [col_gender, col_region, col_drug]:
