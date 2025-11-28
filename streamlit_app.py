@@ -297,23 +297,40 @@ if uploaded is not None:
 
         st.json(summary)
 
-        # -----------------------------
-        # Highest Risk Region
-        # -----------------------------
-        st.subheader('Wilayah Risiko Tertinggi')
+# -----------------------------
+# Highest Risk Region
+# -----------------------------
+st.subheader('Wilayah Risiko Tertinggi')
 
-        if col_region:
-            region_means = {}
-            regions = df[col_region].dropna().unique()
+# Pastikan kolom wilayah terdeteksi
+if col_region:
 
-            for r in regions:
-                s = df[df[col_region] == r].groupby(col_date).size()
-                s = s.reindex(daily.index).fillna(0)
-                region_means[r] = s.mean()
+    # Ambil semua nama wilayah unik
+    regions = df[col_region].dropna().unique()
 
-            region_df = pd.DataFrame(region_means.items(), columns=['Wilayah','Rata-rata Kasus Harian'])
-            region_df = region_df.sort_values('Rata-rata Kasus Harian', ascending=False)
+    region_means = {}
 
-            st.dataframe(region_df.head(10))
-        else:
-            st.info('Kolom wilayah tidak tersedia.')
+    # Hitung rata-rata kasus harian setiap wilayah
+    for r in regions:
+        # jumlah kasus per hari untuk wilayah tsb
+        per_day = df[df[col_region] == r].groupby(col_date).size()
+
+        # reindex agar sejajar dengan index harian lengkap
+        per_day = per_day.reindex(daily.index).fillna(0)
+
+        # rata-rata harian
+        region_means[r] = per_day.mean()
+
+    # Buat dataframe hasil
+    region_df = pd.DataFrame(
+        region_means.items(),
+        columns=['Wilayah', 'Rata-rata Kasus Harian']
+    )
+
+    region_df = region_df.sort_values('Rata-rata Kasus Harian', ascending=False)
+
+    st.dataframe(region_df.head(10))
+
+else:
+    st.info("Kolom wilayah tidak tersedia pada dataset yang diunggah.")
+
