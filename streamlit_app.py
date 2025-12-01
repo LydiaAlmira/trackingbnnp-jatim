@@ -156,7 +156,11 @@ if uploaded is not None:
 
         # Jika ada kolom berat, pastikan numeric
         if col_weight and col_weight in df.columns:
-            df[col_weight] = pd.to_numeric(df[col_weight].astype(str).str.replace(',', '').str.extract(r'([0-9\.]+)')[0], errors='coerce')
+            # remove commas, extract numeric part
+            df[col_weight] = pd.to_numeric(
+                df[col_weight].astype(str).str.replace(',', '').str.extract(r'([0-9\.]+)')[0],
+                errors='coerce'
+            )
 
         # Aggregasi harian
         # Use safer groupby column reference: group by date column name
@@ -244,15 +248,19 @@ if uploaded is not None:
         st.markdown('**Heatmap: Wilayah x Jenis Narkoba (jumlah kasus)**')
         if col_region and col_region in df.columns and col_drug and col_drug in df.columns:
             try:
+                # safer: count by groupby then unstack
                 heat = df.groupby([col_region, col_drug]).size().unstack(fill_value=0)
                 top_w = df[col_region].value_counts().nlargest(20).index
                 top_d = df[col_drug].value_counts().nlargest(10).index
                 heat = heat.reindex(index=top_w, columns=top_d, fill_value=0)
-                fig5, ax5 = plt.subplots(figsize=(12,6))
-                sns.heatmap(heat, annot=True, fmt='d', cmap='YlOrRd', ax=ax5)
-                ax5.set_xlabel('Jenis Narkoba')
-                ax5.set_ylabel('Wilayah')
-                st.pyplot(fig5)
+                if heat.shape[0] == 0 or heat.shape[1] == 0:
+                    st.info('Pivot heatmap kosong — tidak cukup kombinasi wilayah/jenis narkoba.')
+                else:
+                    fig5, ax5 = plt.subplots(figsize=(12,6))
+                    sns.heatmap(heat, annot=True, fmt='d', cmap='YlOrRd', ax=ax5)
+                    ax5.set_xlabel('Jenis Narkoba')
+                    ax5.set_ylabel('Wilayah')
+                    st.pyplot(fig5)
             except Exception:
                 st.info('Gagal membuat heatmap (periksa ukuran pivot).')
         else:
@@ -266,19 +274,17 @@ if uploaded is not None:
 
         if col_region and col_region in df.columns and col_drug and col_drug in df.columns:
             try:
-                heat_case = df.pivot_table(
-                    index=col_region,
-                    columns=col_drug,
-                    values=col_drug,
-                    aggfunc="count",
-                    fill_value=0
-                )
-                fig_hc, ax_hc = plt.subplots(figsize=(12, 8))
-                sns.heatmap(heat_case, annot=True, fmt="d", cmap="YlOrRd", ax=ax_hc)
-                ax_hc.set_xlabel("Jenis Narkoba")
-                ax_hc.set_ylabel("Wilayah")
-                ax_hc.set_title("Jumlah Kasus per Jenis Narkoba")
-                st.pyplot(fig_hc)
+                # REPLACED: pivot_table with values=col_drug (which could be string) -> use groupby size
+                heat_case = df.groupby([col_region, col_drug]).size().unstack(fill_value=0)
+                if heat_case.shape[0] == 0 or heat_case.shape[1] == 0:
+                    st.info("Data tidak cukup untuk heatmap jumlah kasus (detail).")
+                else:
+                    fig_hc, ax_hc = plt.subplots(figsize=(12, 8))
+                    sns.heatmap(heat_case, annot=True, fmt="d", cmap="YlOrRd", ax=ax_hc)
+                    ax_hc.set_xlabel("Jenis Narkoba")
+                    ax_hc.set_ylabel("Wilayah")
+                    ax_hc.set_title("Jumlah Kasus per Jenis Narkoba")
+                    st.pyplot(fig_hc)
             except Exception:
                 st.info("Gagal membuat heatmap jumlah kasus.")
         else:
@@ -296,12 +302,15 @@ if uploaded is not None:
                     aggfunc="mean",
                     fill_value=0
                 )
-                fig_ha, ax_ha = plt.subplots(figsize=(12, 8))
-                sns.heatmap(heat_avg, annot=True, fmt=".1f", cmap="YlGnBu", ax=ax_ha)
-                ax_ha.set_xlabel("Jenis Narkoba")
-                ax_ha.set_ylabel("Wilayah")
-                ax_ha.set_title("Rata-Rata Berat Narkoba per Wilayah")
-                st.pyplot(fig_ha)
+                if heat_avg.shape[0] == 0 or heat_avg.shape[1] == 0:
+                    st.info("Tidak cukup data untuk heatmap rata-rata berat.")
+                else:
+                    fig_ha, ax_ha = plt.subplots(figsize=(12, 8))
+                    sns.heatmap(heat_avg, annot=True, fmt=".1f", cmap="YlGnBu", ax=ax_ha)
+                    ax_ha.set_xlabel("Jenis Narkoba")
+                    ax_ha.set_ylabel("Wilayah")
+                    ax_ha.set_title("Rata-Rata Berat Narkoba per Wilayah")
+                    st.pyplot(fig_ha)
             except Exception:
                 st.info("Gagal membuat heatmap rata-rata berat.")
         else:
@@ -310,23 +319,22 @@ if uploaded is not None:
         # 3) Heatmap: Tren Bulanan Jenis Narkoba
         st.subheader("Heatmap: Tren Bulanan Jenis Narkoba")
 
-        if col_drug and col_date:
+        if col_drug and col_date and col_drug in df.columns:
             try:
                 df['_tmp_date_for_month'] = pd.to_datetime(df[col_date], errors='coerce')
-                df['BULAN'] = df['_tmp_date_for_month'].dt.to_period("M")
-                trend_monthly = df.pivot_table(
-                    index="BULAN",
-                    columns=col_drug,
-                    values=col_drug,
-                    aggfunc="count",
-                    fill_value=0
-                )
-                fig_tm, ax_tm = plt.subplots(figsize=(14, 7))
-                sns.heatmap(trend_monthly, annot=True, fmt="d", cmap="Oranges", ax=ax_tm)
-                ax_tm.set_xlabel("Jenis Narkoba")
-                ax_tm.set_ylabel("Bulan")
-                ax_tm.set_title("Tren Bulanan Jenis Narkoba")
-                st.pyplot(fig_tm)
+                df['BULAN'] = df['_tmp_date_for_month'].dt.to_period("M").astype(str)
+                # REPLACED: pivot_table using values=col_drug -> safer to use groupby size
+                trend_monthly = df.groupby(["BULAN", col_drug]).size().unstack(fill_value=0)
+                if trend_monthly.shape[0] == 0 or trend_monthly.shape[1] == 0:
+                    st.info("Tidak cukup data untuk membuat heatmap tren bulanan.")
+                else:
+                    # convert index to something seaborn likes (string labels)
+                    fig_tm, ax_tm = plt.subplots(figsize=(14, 7))
+                    sns.heatmap(trend_monthly, annot=True, fmt="d", cmap="Oranges", ax=ax_tm)
+                    ax_tm.set_xlabel("Jenis Narkoba")
+                    ax_tm.set_ylabel("Bulan")
+                    ax_tm.set_title("Tren Bulanan Jenis Narkoba")
+                    st.pyplot(fig_tm)
             except Exception:
                 st.info("Gagal membuat heatmap tren bulanan.")
             finally:
@@ -346,12 +354,15 @@ if uploaded is not None:
                     aggfunc="sum",
                     fill_value=0
                 )
-                fig_rh, ax_rh = plt.subplots(figsize=(12, 8))
-                sns.heatmap(rank_heat, annot=True, fmt=".1f", cmap="Reds", ax=ax_rh)
-                ax_rh.set_xlabel("Jenis Narkoba")
-                ax_rh.set_ylabel("Wilayah")
-                ax_rh.set_title("Total Berat Narkoba per Wilayah")
-                st.pyplot(fig_rh)
+                if rank_heat.shape[0] == 0 or rank_heat.shape[1] == 0:
+                    st.info("Tidak cukup data untuk heatmap total berat.")
+                else:
+                    fig_rh, ax_rh = plt.subplots(figsize=(12, 8))
+                    sns.heatmap(rank_heat, annot=True, fmt=".1f", cmap="Reds", ax=ax_rh)
+                    ax_rh.set_xlabel("Jenis Narkoba")
+                    ax_rh.set_ylabel("Wilayah")
+                    ax_rh.set_title("Total Berat Narkoba per Wilayah")
+                    st.pyplot(fig_rh)
             except Exception:
                 st.info("Gagal membuat heatmap total berat.")
         else:
