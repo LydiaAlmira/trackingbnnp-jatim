@@ -50,6 +50,26 @@ def find_column(df, keywords):
                 return c
     return None
 
+def looks_like_gender_series(s):
+    """
+    Return True if series s looks like gender codes (L/P, Male/Female, etc).
+    Heuristics: many values are single letter 'L'/'P' or gender-like words.
+    """
+    s_nonnull = s.dropna().astype(str).str.strip().str.lower()
+    if s_nonnull.empty:
+        return False
+    # sample unique small values
+    uniq = s_nonnull.unique()
+    # if majority are single-letter l/p or words 'l','p','male','female','lk','pr'
+    short_vals = sum(1 for x in s_nonnull if len(x) <= 2)
+    if short_vals / len(s_nonnull) > 0.6:
+        return True
+    # if contains male/female words majority
+    gender_words = {'l', 'p', 'lk', 'pr', 'male', 'female', 'man', 'woman'}
+    cnt_gender_like = sum(1 for x in s_nonnull if any(g in x for g in gender_words))
+    if cnt_gender_like / len(s_nonnull) > 0.5:
+        return True
+    return False
 
 def forecast_prophet(series, periods=30):
     dfp = series.reset_index()
@@ -92,27 +112,132 @@ if uploaded is not None:
         st.subheader('Preview data (5 baris pertama)')
         st.write(df.head())
 
-        # Deteksi kolom
+        # -----------------------------
+        # Deteksi kolom (lebih aman)
+        # -----------------------------
+        # initial heuristics
         col_date = find_column(df, ['tanggal','tgl','date'])
         col_age = find_column(df, ['umur','usia','age'])
         col_gender = find_column(df, ['jenis kelamin','jk','gender','sex'])
+        # prefer any explicit narkotika column first
+        col_drug = find_column(df, ['jenis narkotika','jenis narkoba','narkotika','narkoba','jenis barang','nama barang'])
+        # fallback to 'jenis' if not found (but we'll validate)
+        if col_drug is None:
+            col_drug = find_column(df, ['jenis', 'barang', 'jenis barang'])
+
         col_region = find_column(df, ['asal','wilayah','kota','kabupaten','daerah'])
-        col_drug = find_column(df, ['narkoba','jenis barang','jenis narkoba','barang','nama barang','jenis'])
         col_weight = find_column(df, ['berat','weight','kg','gram','jumlah'])  # otomatis deteksi kolom berat jika ada
 
-        st.markdown('**Kolom terdeteksi:**')
-        st.json({
-            'Tanggal': col_date,
-            'Umur': col_age,
-            'Jenis Kelamin': col_gender,
-            'Wilayah/Asal': col_region,
-            'Jenis Narkoba': col_drug,
-            'Kolom Berat (deteksi)': col_weight
-        })
+        # Validate that col_drug is not actually gender column
+        if col_drug is not None and col_drug in df.columns:
+            sample = df[col_drug].dropna().astype(str).str.strip()
+            if looks_like_gender_series(sample):
+                # detected col_drug is likely gender column -> ignore it
+                st.warning(f"Deteksi otomatis menemukan kolom '{col_drug}' untuk Jenis Narkotika, tetapi isinya terlihat seperti kode jenis kelamin (L/P).")
+                col_drug = None
 
-        if col_date is None:
-            st.error('Kolom tanggal tidak ditemukan. Silakan pilih:')
-            col_date = st.selectbox('Kolom tanggal', df.columns)
+        # If still no drug column found, try scanning for 'nark' anywhere in columns
+        if col_drug is None:
+            for c in df.columns:
+                if 'nark' in str(c).lower() or 'narkot' in str(c).lower():
+                    col_drug = c
+                    break
+
+        # If still ambiguous, ask user to select correct column for each essential field.
+        st.markdown('**Kolom terdeteksi (hasil awal, sesuaikan jika salah):**')
+        col_info = {
+            'Tanggal (deteksi)': col_date,
+            'Umur (deteksi)': col_age,
+            'Jenis Kelamin (deteksi)': col_gender,
+            'Wilayah/Asal (deteksi)': col_region,
+            'Jenis Narkotika (deteksi)': col_drug,
+            'Kolom Berat (deteksi)': col_weight
+        }
+        st.json(col_info)
+
+        # Force user to pick correct columns if detection ambiguous
+        # DATE
+        if col_date is None or col_date not in df.columns:
+            st.error('Kolom tanggal tidak terdeteksi otomatis. Silakan pilih kolom tanggal:')
+            col_date = st.selectbox('Kolom tanggal', df.columns, index=0)
+        else:
+            # still allow manual override
+            if st.checkbox('Ganti kolom tanggal (manual)', value=False):
+                col_date = st.selectbox('Kolom tanggal (manual)', df.columns, index=list(df.columns).index(col_date))
+
+        # DRUG
+        if col_drug is None or col_drug not in df.columns:
+            st.error('Kolom Jenis Narkotika tidak terdeteksi dengan yakin. Silakan pilih kolom Jenis Narkotika:')
+            col_drug = st.selectbox('Kolom Jenis Narkotika', options=list(df.columns))
+        else:
+            # validate content quickly and allow override
+            sample = df[col_drug].dropna().astype(str).str.strip().str.lower()
+            if looks_like_gender_series(sample):
+                st.error(f"Kolom terpilih ({col_drug}) terlihat seperti kolom jenis kelamin. Silakan pilih kolom Jenis Narkotika secara manual.")
+                col_drug = st.selectbox('Kolom Jenis Narkotika', options=list(df.columns))
+            else:
+                if st.checkbox(f'Ganti kolom Jenis Narkotika (default: {col_drug})', value=False):
+                    col_drug = st.selectbox('Kolom Jenis Narkotika (manual)', options=list(df.columns), index=list(df.columns).index(col_drug))
+
+        # GENDER
+        if col_gender is None or col_gender not in df.columns:
+            # try to find likely gender column by heuristics (has many L/P)
+            guessed = None
+            for c in df.columns:
+                try:
+                    if looks_like_gender_series(df[c].dropna().astype(str)):
+                        guessed = c
+                        break
+                except Exception:
+                    continue
+            if guessed is not None:
+                col_gender = guessed
+            else:
+                # ask user (optional)
+                col_gender = st.selectbox('Pilih kolom jenis kelamin (jika ada). Pilih "-" jika tidak ada.', options=['-'] + list(df.columns))
+                if col_gender == '-':
+                    col_gender = None
+        else:
+            if st.checkbox(f'Ganti kolom Jenis Kelamin (default: {col_gender})', value=False):
+                col_gender = st.selectbox('Kolom Jenis Kelamin (manual)', options=['-'] + list(df.columns))
+                if col_gender == '-':
+                    col_gender = None
+
+        # REGION (allow manual override)
+        if col_region is None or col_region not in df.columns:
+            if st.checkbox('Pilih kolom wilayah/manual', value=True):
+                col_region = st.selectbox('Kolom wilayah/asl', options=['-'] + list(df.columns))
+                if col_region == '-':
+                    col_region = None
+        else:
+            if st.checkbox(f'Ganti kolom wilayah (default: {col_region})', value=False):
+                col_region = st.selectbox('Kolom wilayah (manual)', options=['-'] + list(df.columns))
+                if col_region == '-':
+                    col_region = None
+
+        # AGE override option
+        if col_age is None or col_age not in df.columns:
+            if st.checkbox('Pilih kolom umur/manual (opsional)', value=False):
+                col_age = st.selectbox('Kolom umur', options=['-'] + list(df.columns))
+                if col_age == '-':
+                    col_age = None
+        else:
+            if st.checkbox(f'Ganti kolom umur (default: {col_age})', value=False):
+                col_age = st.selectbox('Kolom umur (manual)', options=['-'] + list(df.columns))
+                if col_age == '-':
+                    col_age = None
+
+        # Kolom berat manual
+        if col_weight is None or col_weight not in df.columns:
+            if st.checkbox('Pilih kolom berat/manual (opsional)', value=False):
+                col_weight = st.selectbox('Kolom berat', options=['-'] + list(df.columns))
+                if col_weight == '-':
+                    col_weight = None
+        else:
+            if st.checkbox(f'Ganti kolom berat (default: {col_weight})', value=False):
+                col_weight = st.selectbox('Kolom berat (manual)', options=['-'] + list(df.columns))
+                if col_weight == '-':
+                    col_weight = None
 
         # === Perbaikan konversi tanggal ===
         raw_dates = df[col_date].copy()
@@ -145,13 +270,16 @@ if uploaded is not None:
         df[col_date] = pd.to_datetime(df[col_date]).dt.floor('D')
 
         # Filter tahun 2025 s.d November jika ada data 2025
-        if (df[col_date].dt.year == 2025).any():
-            df = df[df[col_date].dt.year == 2025]
-            df = df[df[col_date].dt.month <= 11]
+        try:
+            if (df[col_date].dt.year == 2025).any():
+                df = df[df[col_date].dt.year == 2025]
+                df = df[df[col_date].dt.month <= 11]
+        except Exception:
+            pass
 
         # Normalisasi string kolom kategori
         for c in [col_gender, col_region, col_drug]:
-            if c in df.columns:
+            if c and c in df.columns:
                 df[c] = df[c].astype(str).str.strip()
 
         # Jika ada kolom berat, pastikan numeric
