@@ -649,22 +649,22 @@ if uploaded is not None:
     else:
         st.info("Silakan unggah file Excel untuk memulai analisis.")
     
-    # =============================
-    # DOWNLOAD EXCEL (DI LUAR TRY)
-    # =============================
-    if "forecast_df" in st.session_state:
-    
-        def convert_df_to_excel(df):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                df.to_excel(writer, index=False, sheet_name="Forecast")
-            return output.getvalue()
-    
-        excel_data = convert_df_to_excel(st.session_state["forecast_df"])
-    
-        st.download_button(
-            label="📥 Download Hasil Prediksi (Excel)",
-            data=excel_data,
-            file_name="hasil_prediksi_kasus_narkoba.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+# =============================
+# DOWNLOAD EXCEL
+# =============================
+if "forecast_df" in st.session_state:
+
+    def convert_df_to_excel(df):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Forecast")
+        return output.getvalue()
+
+    excel_data = convert_df_to_excel(st.session_state["forecast_df"])
+
+    st.download_button(
+        label="📥 Download Hasil Prediksi (Excel)",
+        data=excel_data,
+        file_name="hasil_prediksi_kasus_narkoba.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
