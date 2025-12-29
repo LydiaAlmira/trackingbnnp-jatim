@@ -609,14 +609,51 @@ if uploaded is not None:
             st.subheader("Ringkasan Prediksi")
             st.json({
                 "mean_jumlah_kasus": float(total_fc.mean()) if total_fc is not None else None,
-                "tren_jumlah_kasus": ("naik" if (total_fc is not None and total_fc.iloc[-1] > total_fc.iloc[0]) else "turun") if total_fc is not None else None,
+                "tren_jumlah_kasus": (
+                    "naik" if (total_fc is not None and total_fc.iloc[-1] > total_fc.iloc[0]) else "turun"
+                ) if total_fc is not None else None,
                 "mean_umur": float(age_fc.mean()) if age_fc is not None else None,
                 "mean_prop_laki": float(male_fc.mean()) if male_fc is not None else None,
                 "mean_prop_perempuan": float(female_fc.mean()) if female_fc is not None else None,
             })
-
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses file: {e}")
-
-else:
-    st.info('Silakan unggah file Excel untuk memulai analisis.')
+            
+            # =============================
+            # TABEL HASIL PREDIKSI
+            # =============================
+            st.subheader("Tabel Hasil Prediksi")
+            
+            forecast_df = pd.DataFrame({
+                "Tanggal": total_fc.index if total_fc is not None else [],
+                "Prediksi_Jumlah_Kasus": total_fc.values if total_fc is not None else [],
+            })
+            
+            if age_fc is not None:
+                forecast_df["Prediksi_Rata2_Umur"] = age_fc.values
+            
+            if male_fc is not None:
+                forecast_df["Proporsi_Laki_Laki"] = male_fc.values
+            
+            if female_fc is not None:
+                forecast_df["Proporsi_Perempuan"] = female_fc.values
+            
+            forecast_df["Tanggal"] = pd.to_datetime(forecast_df["Tanggal"])
+            
+            st.dataframe(forecast_df, use_container_width=True)
+            
+            # =============================
+            # DOWNLOAD EXCEL
+            # =============================
+            def convert_df_to_excel(df):
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    df.to_excel(writer, index=False, sheet_name="Forecast")
+                return output.getvalue()
+            
+            excel_data = convert_df_to_excel(forecast_df)
+            
+            st.download_button(
+                label="📥 Download Hasil Prediksi (Excel)",
+                data=excel_data,
+                file_name="hasil_prediksi_kasus_narkoba.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
