@@ -501,27 +501,14 @@ if uploaded is not None:
         # ------------------------------------------------------
         st.subheader(f"Forecast {periods} Hari Ke Depan")
 
-               model_choice = st.selectbox(
-            "Pilih metode forecasting",
-            ["Prophet (jika tersedia)", "ARIMA"]
-        )
-        
-        run_forecast = st.button("🚀 Jalankan Forecast", use_container_width=True)
-        
-        use_prophet_final = (
-            model_choice.startswith("Prophet")
-            and PROPHET_AVAILABLE
-            and use_prophet
-        )
+        model_choice = st.selectbox("Pilih metode", ["Prophet (jika tersedia)", "ARIMA"])
+        use_prophet_final = model_choice.startswith("Prophet") and PROPHET_AVAILABLE and use_prophet
 
-         if run_forecast:
-        
-            if 'jumlah_kasus' not in daily.columns or daily.shape[0] == 0:
-                st.warning("Data harian tidak cukup untuk forecasting.")
-            else:
-                st.success("Forecast sedang dijalankan…")
-        
-                # 🔽 SEMUA ISI KODE FORECAST KAMU TETAP DI SINI
+
+        # Ensure 'daily' exists and has the expected columns
+        if 'jumlah_kasus' not in daily.columns or daily.shape[0] == 0:
+            st.warning("Data harian tidak cukup untuk forecasting.")
+        else:
 
             # ------------------------------------------------------
             # FORECAST — JUMLAH KASUS
