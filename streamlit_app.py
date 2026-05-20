@@ -1,20 +1,7 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import io
-from datetime import timedelta
-from statsmodels.tsa.arima.model import ARIMA
-
 # =========================
 # CONFIGURASI UMUM
 # =========================
-st.set_page_config(
-    page_title="Dashboard Prediksi Kasus Narkoba",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config( page_title="Dashboard Prediksi Kasus Narkoba", layout="wide", initial_sidebar_state="expanded" )
 
 # =========================
 # IMPORT LIBRARY
