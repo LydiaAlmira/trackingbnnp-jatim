@@ -157,7 +157,8 @@ if menu == "HOME 🏠":
 
     st.info(
         "Sistem ini digunakan untuk analisis data kasus narkoba, "
-        "visualisasi statistik, serta forecasting jumlah kasus."
+        "visualisasi statistik, serta forecasting jumlah kasus "
+        "dan prediksi kesatuan dengan klien terbanyak."
     )
 
     st.markdown("### Panduan Penggunaan Sistem 🔎")
@@ -168,7 +169,7 @@ if menu == "HOME 🏠":
         - **INPUT DATA** 📁 : Upload file Excel
         - **DATA PREPROCESSING** 🧹 : Cleaning & validasi data
         - **VISUALISASI DATA** 📊 : Grafik & heatmap
-        - **FORECASTING** 📈 : Prediksi kasus
+        - **FORECASTING** 📈 : Prediksi kasus dan kesatuan
         - **RINGKASAN HASIL** 📋 : Kesimpulan forecast
         """
     )
@@ -224,9 +225,6 @@ elif menu == "DATA PREPROCESSING 🧹":
 
     df = st.session_state.df.copy()
 
-    # =========================
-    # DETEKSI KOLOM
-    # =========================
     col_date = find_column(
         df,
         ['tanggal', 'tgl', 'date']
@@ -252,6 +250,11 @@ elif menu == "DATA PREPROCESSING 🧹":
         ['narkoba', 'narkotika', 'jenis']
     )
 
+    col_kesatuan = find_column(
+        df,
+        ['kesatuan', 'satker', 'bnnk', 'instansi']
+    )
+
     st.subheader("🔍 Hasil Deteksi Kolom")
 
     st.json({
@@ -259,12 +262,10 @@ elif menu == "DATA PREPROCESSING 🧹":
         "Umur": col_age,
         "Jenis Kelamin": col_gender,
         "Wilayah": col_region,
-        "Jenis Narkoba": col_drug
+        "Jenis Narkoba": col_drug,
+        "Kesatuan": col_kesatuan
     })
 
-    # =========================
-    # VALIDASI TANGGAL
-    # =========================
     if col_date is None:
 
         st.error("Kolom tanggal tidak ditemukan")
@@ -280,9 +281,6 @@ elif menu == "DATA PREPROCESSING 🧹":
 
     df = df.sort_values(by=col_date)
 
-    # =========================
-    # SIMPAN SESSION
-    # =========================
     st.session_state.df_processed = df
 
     st.session_state.col_date = col_date
@@ -290,6 +288,7 @@ elif menu == "DATA PREPROCESSING 🧹":
     st.session_state.col_gender = col_gender
     st.session_state.col_region = col_region
     st.session_state.col_drug = col_drug
+    st.session_state.col_kesatuan = col_kesatuan
 
     st.subheader("📊 Data Setelah Preprocessing")
 
@@ -316,6 +315,7 @@ elif menu == "VISUALISASI DATA 📊":
     col_region = st.session_state.col_region
     col_drug = st.session_state.col_drug
     col_date = st.session_state.col_date
+    col_kesatuan = st.session_state.col_kesatuan
 
     # =========================
     # TOP WILAYAH
@@ -327,7 +327,7 @@ elif menu == "VISUALISASI DATA 📊":
         top_reg = (
             df[col_region]
             .value_counts()
-            .nlargest(20)
+            .nlargest(10)
         )
 
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -337,10 +337,29 @@ elif menu == "VISUALISASI DATA 📊":
             top_reg.values
         )
 
-        ax.set_xlabel("Jumlah Kasus")
-        ax.set_ylabel("Wilayah")
-
         st.pyplot(fig)
+
+    # =========================
+    # TOP KESATUAN
+    # =========================
+    if col_kesatuan:
+
+        st.subheader("🏢 Top Kesatuan")
+
+        top_satker = (
+            df[col_kesatuan]
+            .value_counts()
+            .nlargest(10)
+        )
+
+        figk, axk = plt.subplots(figsize=(8, 5))
+
+        axk.barh(
+            top_satker.index,
+            top_satker.values
+        )
+
+        st.pyplot(figk)
 
     # =========================
     # PIE GENDER
@@ -373,7 +392,7 @@ elif menu == "VISUALISASI DATA 📊":
         top_drug = (
             df[col_drug]
             .value_counts()
-            .nlargest(20)
+            .nlargest(10)
         )
 
         fig3, ax3 = plt.subplots(figsize=(8, 5))
@@ -383,37 +402,7 @@ elif menu == "VISUALISASI DATA 📊":
             top_drug.values
         )
 
-        ax3.set_xlabel("Jumlah Kasus")
-        ax3.set_ylabel("Jenis Narkoba")
-
         st.pyplot(fig3)
-
-    # =========================
-    # TREN BULANAN
-    # =========================
-    st.subheader("📈 Tren Bulanan")
-
-    monthly = (
-        df.groupby(
-            df[col_date].dt.to_period("M")
-        )
-        .size()
-    )
-
-    monthly.index = monthly.index.to_timestamp()
-
-    fig4, ax4 = plt.subplots(figsize=(10, 4))
-
-    ax4.plot(
-        monthly.index,
-        monthly.values,
-        marker='o'
-    )
-
-    ax4.set_xlabel("Bulan")
-    ax4.set_ylabel("Jumlah Kasus")
-
-    st.pyplot(fig4)
 
     # =========================
     # HEATMAP
@@ -428,17 +417,17 @@ elif menu == "VISUALISASI DATA 📊":
             .unstack(fill_value=0)
         )
 
-        fig5, ax5 = plt.subplots(figsize=(12, 6))
+        fig4, ax4 = plt.subplots(figsize=(12, 6))
 
         sns.heatmap(
             heat,
             annot=True,
             fmt='d',
             cmap='YlOrRd',
-            ax=ax5
+            ax=ax4
         )
 
-        st.pyplot(fig5)
+        st.pyplot(fig4)
 
 # =========================
 # FORECASTING
@@ -473,21 +462,16 @@ elif menu == "FORECASTING 📈":
         .reset_index(name="jumlah_kasus")
     )
 
-    # pastikan datetime
     daily[col_date] = pd.to_datetime(
         daily[col_date]
     )
 
-    # jadikan index datetime
     daily = daily.set_index(col_date)
 
-    # urutkan index
     daily = daily.sort_index()
 
-    # ubah ke frekuensi harian
     daily = daily.asfreq("D")
 
-    # isi missing value
     daily["jumlah_kasus"] = (
         daily["jumlah_kasus"]
         .ffill()
@@ -517,8 +501,7 @@ elif menu == "FORECASTING 📈":
         else:
 
             st.warning(
-                "Prophet tidak tersedia. "
-                "Menggunakan ARIMA."
+                "Prophet tidak tersedia. Menggunakan ARIMA."
             )
 
             forecast = forecast_arima(
@@ -534,14 +517,14 @@ elif menu == "FORECASTING 📈":
         )
 
     # =========================
-    # HASIL FORECAST
+    # TABEL FORECAST
     # =========================
     forecast_df = pd.DataFrame({
         "Tanggal": forecast.index,
         "Forecast": forecast.values
     })
 
-    st.subheader("📄 Hasil Forecast")
+    st.subheader("📄 Hasil Forecast Jumlah Kasus")
 
     st.dataframe(forecast_df)
 
@@ -568,8 +551,53 @@ elif menu == "FORECASTING 📈":
     st.pyplot(fig6)
 
     # =========================
-    # SIMPAN SESSION
+    # FORECAST KESATUAN
     # =========================
+    st.subheader("🏢 Prediksi Kesatuan dengan Klien Terbanyak")
+
+    col_kesatuan = st.session_state.col_kesatuan
+
+    if col_kesatuan:
+
+        satker_count = (
+            df[col_kesatuan]
+            .value_counts()
+            .reset_index()
+        )
+
+        satker_count.columns = [
+            'Kesatuan',
+            'Jumlah_Kasus'
+        ]
+
+        # forecast sederhana
+        satker_count['Forecast_30_Hari'] = (
+            satker_count['Jumlah_Kasus'] * 1.1
+        ).round().astype(int)
+
+        top_satker = satker_count.head(10)
+
+        st.dataframe(top_satker)
+
+        fig7, ax7 = plt.subplots(figsize=(10,5))
+
+        ax7.barh(
+            top_satker['Kesatuan'],
+            top_satker['Forecast_30_Hari']
+        )
+
+        ax7.set_xlabel("Prediksi Klien")
+
+        ax7.set_ylabel("Kesatuan")
+
+        st.pyplot(fig7)
+
+    else:
+
+        st.warning(
+            "Kolom kesatuan/satker tidak ditemukan."
+        )
+
     st.session_state.forecast_df = forecast_df
 
 # =========================
