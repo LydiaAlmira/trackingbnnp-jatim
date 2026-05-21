@@ -157,7 +157,7 @@ if menu == "HOME 🏠":
 
     st.info(
         "Sistem ini digunakan untuk analisis data kasus narkoba, "
-        "visualisasi statistik, serta forecasting jumlah kasus "
+        "visualisasi statistik, forecasting jumlah kasus, "
         "dan prediksi kesatuan dengan klien terbanyak."
     )
 
@@ -166,11 +166,11 @@ if menu == "HOME 🏠":
     st.markdown(
         """
         - **HOME** 🏠 : Penjelasan sistem
-        - **INPUT DATA** 📁 : Upload file Excel
+        - **INPUT DATA** 📁 : Upload file Excel REG TAT
         - **DATA PREPROCESSING** 🧹 : Cleaning & validasi data
         - **VISUALISASI DATA** 📊 : Grafik & heatmap
         - **FORECASTING** 📈 : Prediksi kasus dan kesatuan
-        - **RINGKASAN HASIL** 📋 : Kesimpulan forecast
+        - **RINGKASAN HASIL** 📋 : Kesimpulan hasil
         """
     )
 
@@ -179,7 +179,7 @@ if menu == "HOME 🏠":
 # =========================
 elif menu == "INPUT DATA 📁":
 
-    st.header("📁 Upload Data Kasus Narkoba")
+    st.header("📁 Upload Data REG TAT")
 
     uploaded = st.file_uploader(
         "Upload file Excel (.xls/.xlsx)",
@@ -197,6 +197,10 @@ elif menu == "INPUT DATA 📁":
             st.subheader("🔍 Preview Dataset")
 
             st.dataframe(df.head())
+
+            st.write("### Nama Kolom Dataset")
+
+            st.write(df.columns.tolist())
 
             st.session_state.df = df.copy()
 
@@ -225,34 +229,65 @@ elif menu == "DATA PREPROCESSING 🧹":
 
     df = st.session_state.df.copy()
 
+    # =========================
+    # DETEKSI KOLOM
+    # =========================
     col_date = find_column(
         df,
-        ['tanggal', 'tgl', 'date']
+        [
+            'tanggal',
+            'tgl',
+            'date'
+        ]
     )
 
     col_age = find_column(
         df,
-        ['umur', 'usia']
+        [
+            'umur',
+            'usia'
+        ]
     )
 
     col_gender = find_column(
         df,
-        ['jenis kelamin', 'jk', 'gender']
+        [
+            'jenis kelamin',
+            'jk',
+            'gender'
+        ]
     )
 
     col_region = find_column(
         df,
-        ['asal', 'wilayah', 'kota']
+        [
+            'asal',
+            'wilayah',
+            'kota'
+        ]
     )
 
     col_drug = find_column(
         df,
-        ['narkoba', 'narkotika', 'jenis']
+        [
+            'narkoba',
+            'narkotika',
+            'jenis'
+        ]
     )
 
+    # =========================
+    # KOLOM KESATUAN
+    # =========================
     col_kesatuan = find_column(
         df,
-        ['kesatuan', 'satker', 'bnnk', 'instansi']
+        [
+            'asal pengajuan',
+            'kesatuan',
+            'satker',
+            'bnnk',
+            'instansi'
+        ]
     )
 
     st.subheader("🔍 Hasil Deteksi Kolom")
@@ -266,6 +301,9 @@ elif menu == "DATA PREPROCESSING 🧹":
         "Kesatuan": col_kesatuan
     })
 
+    # =========================
+    # VALIDASI TANGGAL
+    # =========================
     if col_date is None:
 
         st.error("Kolom tanggal tidak ditemukan")
@@ -281,6 +319,9 @@ elif menu == "DATA PREPROCESSING 🧹":
 
     df = df.sort_values(by=col_date)
 
+    # =========================
+    # SIMPAN SESSION
+    # =========================
     st.session_state.df_processed = df
 
     st.session_state.col_date = col_date
@@ -344,7 +385,7 @@ elif menu == "VISUALISASI DATA 📊":
     # =========================
     if col_kesatuan:
 
-        st.subheader("🏢 Top Kesatuan")
+        st.subheader("🏢 Top Kesatuan Pengaju")
 
         top_satker = (
             df[col_kesatuan]
@@ -405,29 +446,28 @@ elif menu == "VISUALISASI DATA 📊":
         st.pyplot(fig3)
 
     # =========================
-    # HEATMAP
+    # TREN BULANAN
     # =========================
-    if col_region and col_drug:
+    st.subheader("📈 Tren Bulanan")
 
-        st.subheader("🔥 Heatmap Wilayah x Jenis Narkoba")
-
-        heat = (
-            df.groupby([col_region, col_drug])
-            .size()
-            .unstack(fill_value=0)
+    monthly = (
+        df.groupby(
+            df[col_date].dt.to_period("M")
         )
+        .size()
+    )
 
-        fig4, ax4 = plt.subplots(figsize=(12, 6))
+    monthly.index = monthly.index.to_timestamp()
 
-        sns.heatmap(
-            heat,
-            annot=True,
-            fmt='d',
-            cmap='YlOrRd',
-            ax=ax4
-        )
+    fig4, ax4 = plt.subplots(figsize=(10, 4))
 
-        st.pyplot(fig4)
+    ax4.plot(
+        monthly.index,
+        monthly.values,
+        marker='o'
+    )
+
+    st.pyplot(fig4)
 
 # =========================
 # FORECASTING
@@ -517,7 +557,7 @@ elif menu == "FORECASTING 📈":
         )
 
     # =========================
-    # TABEL FORECAST
+    # HASIL FORECAST
     # =========================
     forecast_df = pd.DataFrame({
         "Tanggal": forecast.index,
@@ -570,7 +610,6 @@ elif menu == "FORECASTING 📈":
             'Jumlah_Kasus'
         ]
 
-        # forecast sederhana
         satker_count['Forecast_30_Hari'] = (
             satker_count['Jumlah_Kasus'] * 1.1
         ).round().astype(int)
