@@ -644,7 +644,7 @@ elif menu == "FORECASTING 📈":
 # =========================
 elif menu == "RINGKASAN HASIL 📋":
 
-    st.header("📋 Ringkasan Hasil")
+    st.header("📋 Ringkasan Hasil Forecasting")
 
     if 'forecast_df' not in st.session_state:
 
@@ -654,20 +654,157 @@ elif menu == "RINGKASAN HASIL 📋":
 
     forecast_df = st.session_state.forecast_df
 
-    mean_case = forecast_df["Forecast"].mean()
-
-    trend = (
-        "Naik"
-        if forecast_df["Forecast"].iloc[-1]
-        >
-        forecast_df["Forecast"].iloc[0]
-        else "Turun"
+    # =========================
+    # STATISTIK FORECAST
+    # =========================
+    rata_forecast = round(
+        forecast_df["Forecast"].mean(),
+        2
     )
 
-    st.json({
-        "Rata-rata Forecast": float(mean_case),
-        "Tren Forecast": trend,
-        "Jumlah Hari Prediksi": len(forecast_df)
-    })
+    maksimum = round(
+        forecast_df["Forecast"].max(),
+        2
+    )
 
-    st.success("✅ Analisis selesai")
+    minimum = round(
+        forecast_df["Forecast"].min(),
+        2
+    )
+
+    awal = forecast_df["Forecast"].iloc[0]
+
+    akhir = forecast_df["Forecast"].iloc[-1]
+
+    trend = (
+        "📈 Meningkat"
+        if akhir > awal
+        else "📉 Menurun"
+    )
+
+    # =========================
+    # CARD METRIK
+    # =========================
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Rata-rata Forecast",
+            f"{rata_forecast:.2f}"
+        )
+
+    with col2:
+        st.metric(
+            "Forecast Maksimum",
+            f"{maksimum:.2f}"
+        )
+
+    with col3:
+        st.metric(
+            "Forecast Minimum",
+            f"{minimum:.2f}"
+        )
+
+    with col4:
+        st.metric(
+            "Trend Prediksi",
+            trend
+        )
+
+    st.divider()
+
+    # =========================
+    # INTERPRETASI
+    # =========================
+    st.subheader("🧠 Interpretasi Hasil")
+
+    if akhir > awal:
+
+        st.success(
+            f"""
+            Berdasarkan hasil forecasting,
+            jumlah kasus diprediksi mengalami peningkatan
+            dalam periode prediksi berikutnya.
+
+            Rata-rata prediksi kasus berada di angka
+            {rata_forecast:.2f} kasus per hari.
+            """
+        )
+
+    else:
+
+        st.info(
+            f"""
+            Berdasarkan hasil forecasting,
+            jumlah kasus diprediksi cenderung menurun
+            dalam periode prediksi berikutnya.
+
+            Rata-rata prediksi kasus berada di angka
+            {rata_forecast:.2f} kasus per hari.
+            """
+        )
+
+    # =========================
+    # TOP KESATUAN
+    # =========================
+    if 'df_processed' in st.session_state:
+
+        df = st.session_state.df_processed
+
+        col_kesatuan = st.session_state.col_kesatuan
+
+        if col_kesatuan:
+
+            st.subheader("🏢 Kesatuan dengan Pengajuan Tertinggi")
+
+            top_satker = (
+                df[col_kesatuan]
+                .value_counts()
+                .head(5)
+                .reset_index()
+            )
+
+            top_satker.columns = [
+                "Kesatuan",
+                "Jumlah Klien"
+            ]
+
+            st.dataframe(
+                top_satker,
+                use_container_width=True
+            )
+
+            fig8, ax8 = plt.subplots(figsize=(9,4))
+
+            ax8.barh(
+                top_satker["Kesatuan"],
+                top_satker["Jumlah Klien"]
+            )
+
+            ax8.set_xlabel("Jumlah Klien")
+
+            ax8.set_ylabel("Kesatuan")
+
+            st.pyplot(fig8)
+
+    st.divider()
+
+    # =========================
+    # KESIMPULAN
+    # =========================
+    st.subheader("📝 Kesimpulan")
+
+    st.write(
+        f"""
+        Sistem forecasting menunjukkan bahwa tren kasus
+        narkoba selama {len(forecast_df)} hari ke depan
+        diperkirakan {trend.lower()}.
+
+        Analisis juga menunjukkan adanya beberapa
+        kesatuan yang secara konsisten menjadi
+        pengaju klien terbanyak sehingga dapat menjadi
+        fokus monitoring dan evaluasi lebih lanjut.
+        """
+    )
+
+    st.success("✅ Analisis forecasting selesai")
