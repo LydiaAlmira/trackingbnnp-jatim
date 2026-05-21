@@ -69,19 +69,26 @@ st.markdown(
 # HELPER FUNCTION
 # =========================
 def find_column(df, keywords):
+
     for kw in keywords:
+
         for c in df.columns:
+
             if kw.lower() in str(c).lower():
+
                 return c
+
     return None
 
 
 def forecast_prophet(series, periods=30):
 
     dfp = series.reset_index()
+
     dfp.columns = ["ds", "y"]
 
     model = Prophet()
+
     model.fit(dfp)
 
     future = model.make_future_dataframe(
@@ -100,18 +107,25 @@ def forecast_arima(series, periods=30):
 
     s.index = pd.to_datetime(s.index)
 
-    s = s.asfreq("D").fillna(method="ffill")
+    s = s.asfreq("D")
+
+    s = s.ffill().fillna(0)
 
     try:
 
-        model = ARIMA(s, order=(1, 1, 1))
+        model = ARIMA(
+            s,
+            order=(1, 1, 1)
+        )
 
         fit = model.fit()
 
-        pred = fit.get_forecast(steps=periods)
+        pred = fit.get_forecast(
+            steps=periods
+        )
 
         idx = pd.date_range(
-            s.index.max() + timedelta(days=1),
+            start=s.index.max() + timedelta(days=1),
             periods=periods,
             freq="D"
         )
@@ -126,7 +140,7 @@ def forecast_arima(series, periods=30):
         last = float(s.dropna().iloc[-1])
 
         idx = pd.date_range(
-            s.index.max() + timedelta(days=1),
+            start=s.index.max() + timedelta(days=1),
             periods=periods,
             freq="D"
         )
@@ -192,6 +206,7 @@ elif menu == "INPUT DATA 📁":
             st.error(f"Terjadi kesalahan: {e}")
 
     else:
+
         st.info("Silakan upload file terlebih dahulu")
 
 # =========================
@@ -262,6 +277,8 @@ elif menu == "DATA PREPROCESSING 🧹":
     )
 
     df = df.dropna(subset=[col_date])
+
+    df = df.sort_values(by=col_date)
 
     # =========================
     # SIMPAN SESSION
@@ -453,12 +470,29 @@ elif menu == "FORECASTING 📈":
     daily = (
         df.groupby(col_date)
         .size()
-        .to_frame("jumlah_kasus")
+        .reset_index(name="jumlah_kasus")
     )
 
-    daily.index = pd.to_datetime(daily.index)
+    # pastikan datetime
+    daily[col_date] = pd.to_datetime(
+        daily[col_date]
+    )
 
-    daily = daily.asfreq("D").fillna(method="ffill")
+    # jadikan index datetime
+    daily = daily.set_index(col_date)
+
+    # urutkan index
+    daily = daily.sort_index()
+
+    # ubah ke frekuensi harian
+    daily = daily.asfreq("D")
+
+    # isi missing value
+    daily["jumlah_kasus"] = (
+        daily["jumlah_kasus"]
+        .ffill()
+        .fillna(0)
+    )
 
     # =========================
     # PILIH METODE
